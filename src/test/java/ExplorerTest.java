@@ -1,71 +1,49 @@
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import tla2sany.semantic.OpDeclNode;
-import tla2sany.semantic.SymbolNode;
-import tlc2.tool.Action;
-import tlc2.tool.ITool;
-import tlc2.tool.StateVec;
-import tlc2.tool.TLCState;
-import tlc2.util.Context;
-import tlc2.value.IValue;
-import util.UniqueString;
 
-import java.util.Set;
+import java.io.File;
+import java.net.URL;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
 
 class ExplorerTest {
-    /** Minimal concrete TLCState for use in tests. Only toString() is needed. */
-    private static final TLCState STUB_STATE = new TLCState() {
-        @Override public String toString() { return "x = 1"; }
-        @Override public String toString(TLCState s) { return "x = 1"; }
-        @Override public TLCState bind(UniqueString n, IValue v) { throw new UnsupportedOperationException(); }
-        @Override public TLCState bind(SymbolNode n, IValue v) { throw new UnsupportedOperationException(); }
-        @Override public TLCState unbind(UniqueString n) { throw new UnsupportedOperationException(); }
-        @Override public IValue lookup(UniqueString n) { throw new UnsupportedOperationException(); }
-        @Override public boolean containsKey(UniqueString n) { throw new UnsupportedOperationException(); }
-        @Override public TLCState copy() { throw new UnsupportedOperationException(); }
-        @Override public TLCState deepCopy() { throw new UnsupportedOperationException(); }
-        @Override public StateVec addToVec(StateVec v) { throw new UnsupportedOperationException(); }
-        @Override public void deepNormalize() { throw new UnsupportedOperationException(); }
-        @Override public long fingerPrint() { throw new UnsupportedOperationException(); }
-        @Override public boolean allAssigned() { return true; }
-        @Override public Set<OpDeclNode> getUnassigned() { throw new UnsupportedOperationException(); }
-        @Override public TLCState createEmpty() { throw new UnsupportedOperationException(); }
-    };
 
-    private ITool mockTool;
-    private Explorer explorer;
+    // --- helpers ---
 
-    @BeforeEach
-    void setUp() {
-        mockTool = mock(ITool.class);
-
-        StateVec initVec = new StateVec(1);
-        initVec.addElement(STUB_STATE);
-        when(mockTool.getInitStates()).thenReturn(initVec);
-
-        explorer = new Explorer(mockTool);
-        // Populate state 0 so doNext(0) can find it.
-        explorer.doInit();
+    private static Explorer explorerFor(String specName) {
+        URL url = ExplorerTest.class.getClassLoader().getResource(specName + ".tla");
+        File f = new File(url.getFile());
+        String cfg = new File(f.getParent(), specName).getAbsolutePath();
+        return new Explorer(f.getParent(), specName, cfg);
     }
+
+    // --- exception-propagation tests ---
 
     /**
-     * If getNextStates throws, rawSuccessors must propagate the exception
-     * instead of silently swallowing it and returning an empty transition list.
+     * A Next action with infinite recursion throws StackOverflowError.
+     * That is not an EvalException, so it must propagate instead of being
+     * silently swallowed as "action not enabled".
      */
     @Test
-    void doNext_propagatesExceptionFromGetNextStates() {
-        // Action is final; construct one with null pred since the mock tool
-        // throws before TLC ever reads the Action's fields.
-        Action action = new Action(null, Context.Empty);
-        when(mockTool.getActions()).thenReturn(new Action[]{action});
-        RuntimeException boom = new RuntimeException("test explosion from getNextStates");
-        when(mockTool.getNextStates(any(Action.class), any(TLCState.class))).thenThrow(boom);
-
-        assertThrows(RuntimeException.class, () -> explorer.doNext(0));
+    void doNext_propagatesStackOverflowError() {
+        Explorer ex = explorerFor("StackOverflow");
+        ex.doInit();
+        assertThrows(StackOverflowError.class, () -> ex.doNext(0));
     }
+
+    // --- EvalException / "action not enabled" tests ---
+
+    /**
+     * A Next action that always divides by zero throws EvalException.
+     * That is the TLC signal for "action not enabled in this state", so
+     * rawSuccessors catches it and skips the action: doNext returns no successors.
+     */
+    @Test
+    void doNext_returnsEmptyTransitions_forDivByZeroAction() {
+        Explorer ex = explorerFor("DivByZero");
+        ex.doInit();
+        String result = ex.doNext(0);
+        assertTrue(result.contains("\"ok\":true"), result);
+        assertTrue(result.contains("\"transitions\":[]"), result);
+    }
+
 }

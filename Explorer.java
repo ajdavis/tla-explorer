@@ -38,11 +38,6 @@ public class Explorer {
         this.tool = new FastTool(specDir, specName, configName, null);
     }
 
-    /** For testing: inject a pre-built ITool directly. */
-    Explorer(ITool tool) {
-        this.tool = tool;
-    }
-
     private int remember(TLCState s, int parentId, String parentAction) {
         int id = states.size();
         states.add(s);
