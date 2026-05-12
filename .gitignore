@@ -3,3 +3,4 @@ tla2tools.jar
 .DS_Store
 states/
 *.log
+target/

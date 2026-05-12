@@ -28,17 +28,22 @@ This makes it natural to drive from a script, a notebook, or an LLM agent. The s
 
 ## Build and run
 
-Requires Java and TLA+'s `tla2tools.jar` (v1.7.4 or later):
+Requires Java 11+ and Maven. Download TLA+'s `tla2tools.jar` (v1.7.4 or later) into the project root:
 
 ```bash
 curl -L -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
-javac -cp tla2tools.jar Explorer.java
 ```
 
-Interactive mode:
+Build with Maven:
 
 ```bash
-java -cp tla2tools.jar:. Explorer YourSpec.tla YourSpec.cfg
+mvn package -DskipTests
+```
+
+The runnable jar is `target/tla-explorer-1.0-SNAPSHOT.jar`. Interactive mode:
+
+```bash
+java -cp tla2tools.jar:target/tla-explorer-1.0-SNAPSHOT.jar Explorer YourSpec.tla YourSpec.cfg
 ```
 
 The first line printed is `{"ok":true,"ready":true}`. Then send commands on stdin, one per line.
@@ -46,10 +51,18 @@ The first line printed is `{"ok":true,"ready":true}`. Then send commands on stdi
 Replay mode (see "Traces as spec unit tests" below):
 
 ```bash
-java -cp tla2tools.jar:. Explorer --replay YourSpec.tla YourSpec.cfg saved-trace.json
+java -cp tla2tools.jar:target/tla-explorer-1.0-SNAPSHOT.jar Explorer --replay YourSpec.tla YourSpec.cfg saved-trace.json
 ```
 
 Exit code 0 means the trace still replays; non-zero means the spec diverged from the saved trace.
+
+### Running tests
+
+```bash
+mvn test
+```
+
+Tests use JUnit 5 and Mockito. `tla2tools.jar` must be present in the project root before running tests.
 
 ## Example session
 
