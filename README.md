@@ -62,7 +62,17 @@ Exit code 0 means the trace still replays; non-zero means the spec diverged from
 mvn test
 ```
 
-Tests use JUnit 5 and Mockito. `tla2tools.jar` must be present in the project root before running tests.
+Tests use JUnit 5. `tla2tools.jar` must be present in the project root before running tests.
+
+### Pre-commit hook
+
+The hook scripts live in `.githooks/` and are tracked by git, but git hooks are always local---git never installs them automatically on clone. After checking out, run once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This points git at the tracked directory. The pre-commit hook runs `mvn test` before every commit.
 
 ## Example session
 
