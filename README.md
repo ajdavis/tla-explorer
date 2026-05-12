@@ -28,7 +28,7 @@ This makes it natural to drive from a script, a notebook, or an LLM agent. The s
 
 ## Build and run
 
-Requires Java 11+ and Maven. Download TLA+'s `tla2tools.jar` (v1.7.4 or later) into the project root:
+Requires Java 11+, Maven, and Python 3.10+. Download TLA+'s `tla2tools.jar` (v1.7.4 or later) into the project root:
 
 ```bash
 curl -L -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
@@ -59,10 +59,10 @@ Exit code 0 means the trace still replays; non-zero means the spec diverged from
 ### Running tests
 
 ```bash
-mvn test
+./run_tests.sh
 ```
 
-Tests use JUnit 5. `tla2tools.jar` must be present in the project root before running tests.
+This runs the Java unit tests (`mvn test`) and all three Python example programs. `tla2tools.jar` must be present in the project root. The examples in `examples/` double as tests: they exercise the live Explorer subprocess against the Mutex spec and assert correct behavior.
 
 ### Pre-commit hook
 
@@ -72,7 +72,17 @@ The hook scripts live in `.githooks/` and are tracked by git, but git hooks are 
 git config core.hooksPath .githooks
 ```
 
-This points git at the tracked directory. The pre-commit hook runs `mvn test` before every commit.
+This points git at the tracked directory. The pre-commit hook runs `./run_tests.sh` before every commit.
+
+## Examples
+
+The `examples/` directory contains three self-contained Python programs that demonstrate each use case. Each also runs as a test (via `run_tests.sh`).
+
+- **`explore.py`** --- Use case 1: interactive trace exploration. Navigates the Mutex spec state graph, checks backtracking, exercises `init`, `step`, `trace`.
+- **`conformance.py`** --- Use case 2: conformance monitoring. Walks a simulated event log through the Explorer and verifies each observed transition is permitted by the spec.
+- **`regression.py`** --- Use case 3: spec regression tests. Captures a trace of a valid execution and an invalid mutual-exclusion violation, then asserts that `--replay` accepts one and rejects the other.
+
+All three import from `examples/explorer.py`, which wraps the Explorer subprocess and handles the JSONL stdio protocol.
 
 ## Example session
 
@@ -156,7 +166,7 @@ The LLM (or the human) is needed once to find each interesting trace. After that
 | `exit`/`quit` | terminates the process                                                                   |
 | unknown line  | `{"ok":false,"error":"..."}` and the process keeps running                               |
 
-Any thrown exception is reported as `{"ok":false,"error":"..."}` and does not crash the process. (Note: this catches `Throwable` at the dispatch boundary so the loop survives malformed input; the interesting work --- `getNextStates` --- does the same and silently drops failures from individual actions. That latter behavior is currently coarser than it should be and is on the TODO list.)
+Any thrown exception is reported as `{"ok":false,"error":"..."}` and does not crash the process. The dispatch boundary catches `Throwable` so the loop survives malformed input. Inside `getNextStates`, only `EvalException` (TLC's "action guard was false" signal) is silently continued; any other throwable propagates to the outer handler and is reported as an error.
 
 ### State identity
 
