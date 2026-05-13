@@ -28,10 +28,10 @@ This makes it natural to drive from a script, a notebook, or an LLM agent. The s
 
 ## Build and run
 
-Requires Java 11+, Maven, and Python 3.10+. Download TLA+'s `tla2tools.jar` (v1.7.4 or later) into the project root:
+Requires Java 11+, Maven, and Python 3.10+. Download TLA+'s `tla2tools.jar` (v1.8.0) into the project root:
 
 ```bash
-curl -L -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+curl -L -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
 ```
 
 Build with Maven:
