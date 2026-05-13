@@ -1,6 +1,5 @@
 """Subprocess wrapper for the Explorer stdio protocol and --replay command."""
 import json
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -8,9 +7,6 @@ _ROOT    = Path(__file__).resolve().parent.parent
 _CP      = f"{_ROOT / 'tla2tools.jar'}:{_ROOT / 'target' / 'classes'}"
 SPEC_DIR = Path(__file__).resolve().parent  # examples/
 MUTEX    = ("Mutex.tla", "Mutex.cfg")  # filenames relative to SPEC_DIR
-
-# Resolve java at import time so debuggers with stripped PATH still work.
-_JAVA = shutil.which("java") or "java"
 
 
 class Explorer:
@@ -23,7 +19,7 @@ class Explorer:
 
     def __init__(self, spec: str, cfg: str, *, cwd: str | Path):
         self._proc = subprocess.Popen(
-            [_JAVA, "-cp", _CP, "Explorer", spec, cfg],
+            ["java", "-cp", _CP, "Explorer", spec, cfg],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -62,7 +58,7 @@ class Explorer:
 def replay(spec: str, cfg: str, trace_path: str, *, cwd: str | Path) -> tuple[bool, str]:
     """Run --replay mode; return (passed, full output text)."""
     r = subprocess.run(
-        [_JAVA, "-cp", _CP, "Explorer", "--replay", spec, cfg, trace_path],
+        ["java", "-cp", _CP, "Explorer", "--replay", spec, cfg, trace_path],
         capture_output=True, text=True, cwd=str(cwd),
     )
     return "PASS:" in r.stdout, r.stdout + r.stderr
