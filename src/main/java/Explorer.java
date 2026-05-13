@@ -9,22 +9,6 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Interactive TLA+ state explorer. Loads a spec + config and answers two
- * commands over a line-oriented stdio protocol:
- *
- *   init                    -- list initial states
- *   next <id>               -- list successor transitions of state <id>
- *   exit                    -- quit
- *
- * States are given monotonically increasing integer ids. The LLM never has
- * to encode a state value; it picks by id and the explorer remembers the
- * TLCState object.
- *
- * Output is one JSON object per line (JSONL). TLA+ state values are
- * embedded as strings using TLCState.toString(), so the LLM sees familiar
- * TLA+ syntax.
- */
 public class Explorer {
     private final ITool tool;
     private final List<TLCState> states = new ArrayList<>();

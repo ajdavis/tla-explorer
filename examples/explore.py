@@ -9,6 +9,9 @@ Spec: Mutex.tla -- two processes sharing a single lock.
 Goal: show that process 1 can reach the critical section, and that the
 mutual-exclusion property holds there (p2 cannot enter while p1 is critical).
 
+Commands used: init (list initial states), step <id> (successor transitions),
+trace <id> (path back to init).
+
 Run from the project root:
     python3 examples/explore.py
 """
