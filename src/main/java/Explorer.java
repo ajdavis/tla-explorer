@@ -1,5 +1,4 @@
 import tlc2.tool.Action;
-import tlc2.tool.EvalException;
 import tlc2.tool.ITool;
 import tlc2.tool.StateVec;
 import tlc2.tool.TLCState;
@@ -185,13 +184,7 @@ public class Explorer {
         if (stateId < 0 || stateId >= states.size()) return out;
         TLCState from = states.get(stateId);
         for (Action a : tool.getActions()) {
-            StateVec succs;
-            try {
-                succs = tool.getNextStates(a, from);
-            } catch (EvalException e) {
-                // Action guard evaluated to false -- not enabled in this state.
-                continue;
-            }
+            StateVec succs = tool.getNextStates(a, from);
             if (succs == null) continue;
             for (int i = 0; i < succs.size(); i++) {
                 TLCState s = succs.elementAt(i);
@@ -315,12 +308,7 @@ public class Explorer {
             TLCState match = null;
             int totalSuccs = 0;
             for (Action actionObj : matchingActions) {
-                StateVec succs;
-                try {
-                    succs = tool.getNextStates(actionObj, current);
-                } catch (EvalException e) {
-                    continue;
-                }
+                StateVec succs = tool.getNextStates(actionObj, current);
                 if (succs == null) continue;
                 totalSuccs += succs.size();
                 for (int j = 0; j < succs.size(); j++) {
