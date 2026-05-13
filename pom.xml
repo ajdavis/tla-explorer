@@ -19,8 +19,7 @@
             <groupId>org.tlatools</groupId>
             <artifactId>tlatools</artifactId>
             <version>1.7.4</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/tla2tools.jar</systemPath>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -30,9 +29,17 @@
         </dependency>
     </dependencies>
 
+    <repositories>
+        <repository>
+            <id>project-lib</id>
+            <url>file://${project.basedir}/lib</url>
+            <releases><checksumPolicy>ignore</checksumPolicy></releases>
+        </repository>
+    </repositories>
+
     <build>
         <plugins>
-            <plugin>
+<plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
