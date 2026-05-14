@@ -11,9 +11,6 @@ mutual-exclusion property holds there (p2 cannot enter while p1 is critical).
 
 Commands used: init (list initial states), step <id> (successor transitions),
 trace <id> (path back to init).
-
-Run from the project root:
-    python3 examples/explore.py
 """
 import sys
 from pathlib import Path
@@ -32,8 +29,7 @@ def main() -> None:
         assert len(r["states"]) == 1, \
             f"expected 1 initial state, got {len(r['states'])}"
         init = r["states"][0]
-        assert 'p1 = "idle"' in init["text"] and 'p2 = "idle"' in init["text"], \
-            f"unexpected init text: {init['text']!r}"
+        assert init["state"] == {"p1": "idle", "p2": "idle"}, init["state"]
         init_id = init["id"]
 
         # --- from init, only Request1 and Request2 are enabled ---
@@ -45,7 +41,7 @@ def main() -> None:
 
         # --- follow Request1 -- p1 is now waiting ---
         req1 = next(t for t in r["transitions"] if t["action"] == "Request1")
-        assert 'p1 = "waiting"' in req1["text"], req1["text"]
+        assert req1["state"]["p1"] == "waiting", req1["state"]
 
         # --- from (waiting, idle): Enter1 and Request2 are enabled; Enter2 is not ---
         r = ex.send(f"step {req1['id']}")
@@ -58,8 +54,8 @@ def main() -> None:
 
         # --- follow Enter1 -- p1 is now in the critical section ---
         enter1 = next(t for t in r["transitions"] if t["action"] == "Enter1")
-        assert 'p1 = "critical"' in enter1["text"], enter1["text"]
-        assert 'p2 = "idle"'     in enter1["text"], enter1["text"]
+        assert enter1["state"]["p1"] == "critical", enter1["state"]
+        assert enter1["state"]["p2"] == "idle",     enter1["state"]
 
         # --- mutual exclusion: Enter2 must not be available while p1 is critical ---
         r = ex.send(f"step {enter1['id']}")

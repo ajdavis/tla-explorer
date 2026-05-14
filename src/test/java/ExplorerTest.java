@@ -29,4 +29,27 @@ class ExplorerTest {
         assertThrows(EvalException.class, () -> ex.doNext(0));
     }
 
+    @Test
+    void doInit_serializesAllValueTypes() {
+        Explorer ex = explorerFor("AllTypes");
+        String result = ex.doInit();
+        assertTrue(result.contains("\"ok\":true"), result);
+        // Primitives
+        assertTrue(result.contains("\"vi\":42"), result);
+        assertTrue(result.contains("\"vs\":\"hello\""), result);
+        assertTrue(result.contains("\"vb\":true"), result);
+        // Record: fields sorted alphabetically by normalize()
+        assertTrue(result.contains("\"vrcd\":{\"x\":1,\"y\":\"world\"}"), result);
+        // Sequence
+        assertTrue(result.contains("\"vseq\":[1,2,3]"), result);
+        // Set
+        assertTrue(result.contains("\"vset\":{\"$set\":[1,2,3]}"), result);
+        // Model value
+        assertTrue(result.contains("\"vmv\":{\"$mv\":\"mv1\"}"), result);
+        // General function
+        assertTrue(result.contains("\"vfcn\":{\"$fn\":[[2,20],[4,40]]}"), result);
+        // Integer interval
+        assertTrue(result.contains("\"vintv\":{\"$interval\":[1,3]}"), result);
+    }
+
 }

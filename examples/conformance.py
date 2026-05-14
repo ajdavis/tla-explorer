@@ -17,30 +17,28 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from explorer import Explorer, SPEC_DIR, MUTEX, norm
+from explorer import Explorer, SPEC_DIR, MUTEX
 
 
 # Simulated event log from a real (or imagined) implementation.
 # Each entry is (action_name, resulting_state).
 # The first entry uses action="" for the initial state.
-# State text is written in a simplified form; norm() handles the TLC
-# "/\ varname = value" formatting when comparing.
-GOOD_LOG: list[tuple[str, str]] = [
-    ("",         'p1 = "idle" p2 = "idle"'),
-    ("Request1", 'p1 = "waiting" p2 = "idle"'),
-    ("Enter1",   'p1 = "critical" p2 = "idle"'),
-    ("Exit1",    'p1 = "idle" p2 = "idle"'),
+GOOD_LOG: list[tuple[str, dict]] = [
+    ("",         {"p1": "idle",     "p2": "idle"}),
+    ("Request1", {"p1": "waiting",  "p2": "idle"}),
+    ("Enter1",   {"p1": "critical", "p2": "idle"}),
+    ("Exit1",    {"p1": "idle",     "p2": "idle"}),
 ]
 
 # A bad log: the implementation enters the critical section without first
 # requesting -- the spec requires p1 = "waiting" before Enter1 can fire.
-BAD_LOG: list[tuple[str, str]] = [
-    ("",       'p1 = "idle" p2 = "idle"'),
-    ("Enter1", 'p1 = "critical" p2 = "idle"'),
+BAD_LOG: list[tuple[str, dict]] = [
+    ("",       {"p1": "idle",     "p2": "idle"}),
+    ("Enter1", {"p1": "critical", "p2": "idle"}),
 ]
 
 
-def check_log(ex: Explorer, log: list[tuple[str, str]]) -> tuple[bool, str]:
+def check_log(ex: Explorer, log: list[tuple[str, dict]]) -> tuple[bool, str]:
     """Verify that log is a permitted execution according to the spec.
 
     Returns (conforms, message). On failure the message names the first
@@ -50,24 +48,24 @@ def check_log(ex: Explorer, log: list[tuple[str, str]]) -> tuple[bool, str]:
     assert r["ok"], r
 
     current_id = next(
-        (s["id"] for s in r["states"] if norm(s["text"]) == norm(log[0][1])),
+        (s["id"] for s in r["states"] if s["state"] == log[0][1]),
         None,
     )
     if current_id is None:
         return False, f"no initial state matches log[0] {log[0][1]!r}"
 
-    for step, (action, state_text) in enumerate(log[1:], 1):
+    for step, (action, state) in enumerate(log[1:], 1):
         r = ex.send(f"next {current_id}")
         assert r["ok"], r
         match = next(
             (t for t in r["transitions"]
-             if t["action"] == action and norm(t["text"]) == norm(state_text)),
+             if t["action"] == action and t["state"] == state),
             None,
         )
         if match is None:
-            available = [(t["action"], norm(t["text"])) for t in r["transitions"]]
+            available = [(t["action"], t["state"]) for t in r["transitions"]]
             return False, (
-                f"step {step}: ({action!r}, {state_text!r}) not permitted; "
+                f"step {step}: ({action!r}, {state!r}) not permitted; "
                 f"available transitions: {available}"
             )
         current_id = match["id"]

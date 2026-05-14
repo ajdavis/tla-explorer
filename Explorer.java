@@ -3,6 +3,17 @@ import tlc2.tool.ITool;
 import tlc2.tool.StateVec;
 import tlc2.tool.TLCState;
 import tlc2.tool.impl.FastTool;
+import tlc2.value.impl.BoolValue;
+import tlc2.value.impl.FcnRcdValue;
+import tlc2.value.impl.IntValue;
+import tlc2.value.impl.IntervalValue;
+import tlc2.value.impl.ModelValue;
+import tlc2.value.impl.RecordValue;
+import tlc2.value.impl.SetEnumValue;
+import tlc2.value.impl.StringValue;
+import tlc2.value.impl.TupleValue;
+import tlc2.value.impl.Value;
+import tlc2.value.impl.ValueVec;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -39,7 +50,7 @@ public class Explorer {
             int id = remember(s, -1, "");
             if (i > 0) sb.append(",");
             sb.append("{\"id\":").append(id)
-              .append(",\"text\":").append(jsonStr(stateText(s)))
+              .append(",\"state\":").append(stateJson(s))
               .append("}");
         }
         sb.append("]}");
@@ -118,7 +129,7 @@ public class Explorer {
             if (i > 0) sb.append(",");
             sb.append("{\"id\":").append(id)
               .append(",\"action\":").append(jsonStr(parentActions.get(id)))
-              .append(",\"text\":").append(jsonStr(stateText(states.get(id))))
+              .append(",\"state\":").append(stateJson(states.get(id)))
               .append("}");
         }
         sb.append("]}");
@@ -194,11 +205,90 @@ public class Explorer {
             first = false;
             sb.append("{\"id\":").append(t.id)
               .append(",\"action\":").append(jsonStr(t.action))
-              .append(",\"text\":").append(jsonStr(stateText(t.state)))
+              .append(",\"state\":").append(stateJson(t.state))
               .append("}");
         }
         sb.append("]}");
         return sb.toString();
+    }
+
+    private static String stateJson(TLCState s) {
+        return valueToJson(new RecordValue(s).normalize());
+    }
+
+    private static String valueToJson(Value v) {
+        if (v instanceof IntValue)
+            return String.valueOf(((IntValue) v).val);
+        if (v instanceof StringValue)
+            return jsonStr(((StringValue) v).val.toString());
+        if (v instanceof BoolValue)
+            return ((BoolValue) v).val ? "true" : "false";
+        if (v instanceof ModelValue)
+            return "{\"$mv\":" + jsonStr(((ModelValue) v).val.toString()) + "}";
+        if (v instanceof RecordValue) {
+            RecordValue r = (RecordValue) v;
+            StringBuilder sb = new StringBuilder("{");
+            for (int i = 0; i < r.names.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append(jsonStr(r.names[i].toString())).append(":").append(valueToJson(r.values[i]));
+            }
+            return sb.append("}").toString();
+        }
+        if (v instanceof TupleValue) {
+            TupleValue t = (TupleValue) v;
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < t.elems.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append(valueToJson(t.elems[i]));
+            }
+            return sb.append("]").toString();
+        }
+        if (v instanceof FcnRcdValue) {
+            FcnRcdValue f = (FcnRcdValue) v;
+            if (f.intv != null) {
+                if (f.intv.low == 1) {
+                    // Sequence: domain is 1..n, serialize as JSON array.
+                    StringBuilder sb = new StringBuilder("[");
+                    for (int i = 0; i < f.values.length; i++) {
+                        if (i > 0) sb.append(",");
+                        sb.append(valueToJson(f.values[i]));
+                    }
+                    return sb.append("]").toString();
+                }
+                // Integer-range function not starting at 1.
+                StringBuilder sb = new StringBuilder("{\"$fn\":[");
+                for (int i = 0; i < f.values.length; i++) {
+                    if (i > 0) sb.append(",");
+                    sb.append("[").append(f.intv.low + i).append(",")
+                      .append(valueToJson(f.values[i])).append("]");
+                }
+                return sb.append("]}").toString();
+            }
+            // General function with explicit domain array.
+            StringBuilder sb = new StringBuilder("{\"$fn\":[");
+            for (int i = 0; i < f.domain.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append("[").append(valueToJson(f.domain[i])).append(",")
+                  .append(valueToJson(f.values[i])).append("]");
+            }
+            return sb.append("]}").toString();
+        }
+        if (v instanceof IntervalValue) {
+            IntervalValue iv = (IntervalValue) v;
+            return "{\"$interval\":[" + iv.low + "," + iv.high + "]}";
+        }
+        if (v instanceof SetEnumValue) {
+            SetEnumValue s = (SetEnumValue) v;
+            ValueVec elems = s.elems;
+            StringBuilder sb = new StringBuilder("{\"$set\":[");
+            for (int i = 0; i < elems.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(valueToJson(elems.elementAt(i)));
+            }
+            return sb.append("]}").toString();
+        }
+        // Unknown value type: fall back to the TLA+ string representation.
+        return jsonStr(v.toString());
     }
 
     /** Minimal TLA+-flavored state rendering using TLCState.toString(). */

@@ -64,18 +64,3 @@ def replay(spec: str, cfg: str, trace_path: str, *, cwd: str | Path) -> tuple[bo
     return "PASS:" in r.stdout, r.stdout + r.stderr
 
 
-def norm(text: str) -> str:
-    """Normalize state text for comparison.
-
-    TLC prefixes each variable assignment with '/\\ '.  This function strips
-    that prefix, collapses whitespace, and sorts lines so comparison is
-    insensitive to variable ordering and formatting differences.
-    """
-    lines = []
-    for raw in text.split("\n"):
-        line = raw.strip()
-        if line.startswith("/\\"):
-            line = line[2:].strip()
-        if line:
-            lines.append(line)
-    return " ".join(sorted(lines))
