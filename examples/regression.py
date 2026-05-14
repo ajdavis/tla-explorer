@@ -41,10 +41,10 @@ def main() -> None:
         assert r["ok"], r
         init_id = r["states"][0]["id"]
 
-        r = ex.send(f"step {init_id}")
+        r = ex.send(f"next {init_id}")
         req1 = next(t for t in r["transitions"] if t["action"] == "Request1")
 
-        r = ex.send(f"step {req1['id']}")
+        r = ex.send(f"next {req1['id']}")
         enter1 = next(t for t in r["transitions"] if t["action"] == "Enter1")
 
         # dump gives the exact TLC state text needed for --replay

@@ -2,27 +2,26 @@
 
 A small Java program that drives the TLA+ model checker's internal `Tool` API as an interactive, line-oriented state explorer. Given a `.tla` spec and a `.cfg` config, it enumerates initial states and successors on demand, remembers every state it has emitted, and can replay a saved sequence of states against the spec.
 
-`Explorer.java` is a single file built with Maven. Its only runtime dependency is `tla2tools.jar`, which also bundles Gson (used for JSON parsing in replay mode). It is intended for two audiences:
-
-- **Java programmers** who want a concrete, readable example of using TLC's `tlc2.tool.ITool` API (`getInitStates`, `getActions`, `getNextStates`) outside the model checker's BFS driver.
-- **LLM-driven workflows** that want to step a spec one transition at a time, the same way a human would in the TLA+ Toolbox, but over stdio.
+`Explorer.java` is a single file built with Maven. Its only runtime dependency is `tla2tools.jar`, which also bundles Gson (used for JSON parsing in replay mode).
 
 ## Why a stdio explorer
 
-TLC's normal mode is exhaustive model checking: it enumerates the entire reachable state space and reports invariant violations. That's the right tool when you have a property to check. It is the wrong tool when you want to *witness* a specific behavior --- "show me a trace where two leaders coexist, then the client writes to the new one and reads from the old one" --- because encoding that goal as a TLA+ predicate is often harder than describing it in English.
+- Trace-checking: given a JSON trace log from an implementation, check the behavior was allowed by the spec.
+- Runtime conformance monitoring: continuous trace-checking. (Will eventually require a pruning feature to limit RAM use.)
+- AI-powered exploration: given a prose description of a behavior, e.g. "a leader is elected, then another, then the first crashes," an LLM can use the tool over stdio to find a sequence of states, or else it can discover that sequence is not allowed by the spec.
+- Example-based testing of specs: store traces from a spec as JSON and check they're allowed or prohibited (as desired) by later versions of the same spec.
 
 `Explorer.java` exposes the same primitives TLC uses internally, but as a synchronous request/response loop:
 
 ```
 init                -- list initial states
-next  <id>          -- raw TLC successors of state <id>
-step  <id>          -- successors with PlusCal "MainLoop" plumbing collapsed
+next  <id>          -- successors of state <id> (one TLC step)
 trace <id>          -- ordered path from an initial state to <id>
-dump  <id>          -- replayable path (every raw step, no collapsing)
+dump  <id>          -- replayable path (no ids, for --replay)
 exit
 ```
 
-Each response is a single JSON line. States are assigned integer ids on first sight and remembered forever, so backtracking is free: re-issue `step <earlier-id>` to fork a different branch without re-deriving anything.
+Each response is a single JSON line. States are assigned integer ids on first sight and remembered forever, so backtracking is free: re-issue `next <earlier-id>` to fork a different branch without re-deriving anything.
 
 This makes it natural to drive from a script, a notebook, or an LLM agent. States are serialized as structured JSON using the [ITF (Informal Trace Format)](https://apalache-mc.org/docs/adr/015adr-trace.html) used by Apalache and Quint, so traces produced by the explorer are compatible with those tools.
 
@@ -78,24 +77,24 @@ This points git at the tracked directory. The pre-commit hook runs `./run_tests.
 
 The `examples/` directory contains three self-contained Python programs that demonstrate each use case. Each also runs as a test (via `run_tests.sh`).
 
-- **`explore.py`** --- Use case 1: interactive trace exploration. Navigates the Mutex spec state graph, checks backtracking, exercises `init`, `step`, `trace`.
-- **`conformance.py`** --- Use case 2: conformance monitoring. Walks a simulated event log through the Explorer and verifies each observed transition is permitted by the spec.
+- **`explore.py`** --- Use case 1: interactive trace exploration. Navigates the Mutex spec state graph, checks backtracking, exercises `init`, `next`, `trace`.
+- **`conformance.py`** --- Use case 2: conformance monitoring. Walks an event log through the Explorer and verifies each observed transition is permitted by the spec.
 - **`regression.py`** --- Use case 3: spec regression tests. Captures a trace of a valid execution and an invalid mutual-exclusion violation, then asserts that `--replay` accepts one and rejects the other.
 
 All three import from `examples/explorer.py`, which wraps the Explorer subprocess and handles the JSONL stdio protocol.
 
 ## Example session
 
-Spec is `LeaseGuard.tla` (a PlusCal protocol with `Write`, `Commit`, `Read`, `BecomeLeader`, etc., wrapped in a `MainLoop` dispatcher label). Lines starting with `>` are sent to the explorer; the others are its replies (one JSON line each, abbreviated here).
+Spec is `LeaseGuard.tla` (a PlusCal protocol with `Write`, `Commit`, `Read`, `BecomeLeader`, etc.). Lines starting with `>` are sent to the explorer; the others are its replies (one JSON line each, abbreviated here).
 
 ```
 > init
 {"ok":true,"states":[{"id":0,"state":{"currentTerm":[{"#bigint":"0"},{"#bigint":"0"},{"#bigint":"0"}],"state":["follower","follower","follower"],...}}]}
-> step 0
+> next 0
 {"ok":true,"from":0,"transitions":[
   {"id":1,"action":"BecomeLeader","state":{"state":["leader","follower","follower"],...}},
   {"id":2,"action":"Tick","state":{"clocks":[{"#bigint":"1"},{"#bigint":"1"},{"#bigint":"1"}],...}}]}
-> step 1
+> next 1
 {"ok":true,"from":1,"transitions":[
   {"id":3,"action":"Write","state":{...}}, ...]}
 > trace 3
@@ -104,8 +103,6 @@ Spec is `LeaseGuard.tla` (a PlusCal protocol with `Write`, `Commit`, `Read`, `Be
   {"id":1,"action":"BecomeLeader","state":{...}},
   {"id":3,"action":"Write","state":{...}}]}
 ```
-
-`step` vs `next`: `step` skips through PlusCal's `MainLoop` plumbing label (which only sets `pc[self] := "<branch>"`) so each returned transition is a semantic protocol action. `next` is the raw TLC view --- useful when the spec has no PlusCal `MainLoop` dispatch, or when you want to inspect the dispatcher itself.
 
 ## Wider ideas
 
@@ -160,9 +157,8 @@ The LLM (or the human) is needed once to find each interesting trace. After that
 |---------------|----------------------------------------------------------------------------------------------|
 | `init`        | `{"ok":true,"states":[{"id":N,"state":{...}}, ...]}`                                       |
 | `next <id>`   | `{"ok":true,"from":N,"transitions":[{"id":M,"action":"X","state":{...}}, ...]}`            |
-| `step <id>`   | same shape as `next`, with PlusCal `MainLoop` collapsed                                     |
-| `trace <id>`  | `{"ok":true,"trace":[{"id":N,"action":"","state":{...}}, ...]}` (init first)               |
-| `dump <id>`   | `{"ok":true,"dump":[{"action":"","state":{...}}, ...]}` (raw, replayable)                  |
+| `trace <id>`  | `{"ok":true,"trace":[{"id":N,"action":"","state":{...}}, ...]}` (init first, includes ids) |
+| `dump <id>`   | `{"ok":true,"dump":[{"action":"","state":{...}}, ...]}` (no ids, for `--replay`)           |
 | `exit`/`quit` | terminates the process                                                                      |
 | unknown line  | `{"ok":false,"error":"..."}` and the process keeps running                                  |
 
@@ -173,12 +169,6 @@ Any thrown exception is reported as `{"ok":false,"error":"..."}` and does not cr
 ### State identity
 
 The explorer serializes states with `deepNormalize()` before JSON conversion, which recursively sorts set elements and record fields into a canonical order. Replay mode compares states using Gson's `JsonElement.equals`, which is order-insensitive for JSON objects and order-sensitive for arrays---exactly the right semantics for TLA+ records (unordered) vs sequences (ordered).
-
-### `MainLoop` collapsing
-
-PlusCal's typical idiom is a `while TRUE do ... end while` body with a dispatch label (here named `MainLoop`) that sets `pc[self] := "<branch>"` for one of N branches. From TLC's view this is two transitions: `MainLoop` (chooses the branch) and then the branch itself (does the work). For interactive exploration the dispatch is noise; `step` and `trace` collapse it so each visible transition is the semantically meaningful one.
-
-If the spec uses a different dispatcher name or no PlusCal at all, use `next` and `dump` instead of `step` and `trace`.
 
 ## Files
 

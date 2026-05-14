@@ -9,7 +9,7 @@ Spec: Mutex.tla -- two processes sharing a single lock.
 Goal: show that process 1 can reach the critical section, and that the
 mutual-exclusion property holds there (p2 cannot enter while p1 is critical).
 
-Commands used: init (list initial states), step <id> (successor transitions),
+Commands used: init (list initial states), next <id> (successor transitions),
 trace <id> (path back to init).
 """
 import sys
@@ -33,7 +33,7 @@ def main() -> None:
         init_id = init["id"]
 
         # --- from init, only Request1 and Request2 are enabled ---
-        r = ex.send(f"step {init_id}")
+        r = ex.send(f"next {init_id}")
         assert r["ok"], r
         actions = {t["action"] for t in r["transitions"]}
         assert actions == {"Request1", "Request2"}, \
@@ -44,7 +44,7 @@ def main() -> None:
         assert req1["state"]["p1"] == "waiting", req1["state"]
 
         # --- from (waiting, idle): Enter1 and Request2 are enabled; Enter2 is not ---
-        r = ex.send(f"step {req1['id']}")
+        r = ex.send(f"next {req1['id']}")
         assert r["ok"], r
         actions = {t["action"] for t in r["transitions"]}
         assert "Enter1"   in actions, f"Enter1 not enabled; got {actions}"
@@ -58,7 +58,7 @@ def main() -> None:
         assert enter1["state"]["p2"] == "idle",     enter1["state"]
 
         # --- mutual exclusion: Enter2 must not be available while p1 is critical ---
-        r = ex.send(f"step {enter1['id']}")
+        r = ex.send(f"next {enter1['id']}")
         assert r["ok"], r
         actions = {t["action"] for t in r["transitions"]}
         assert "Enter2" not in actions, \
@@ -74,7 +74,7 @@ def main() -> None:
             f"unexpected trace: {trace_actions}"
 
         # --- backtrack: step from init again to show free backtracking ---
-        r = ex.send(f"step {init_id}")
+        r = ex.send(f"next {init_id}")
         assert r["ok"], r
         assert {t["action"] for t in r["transitions"]} == {"Request1", "Request2"}
 

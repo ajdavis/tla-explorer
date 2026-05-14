@@ -62,17 +62,15 @@ public class Explorer {
         return sb.toString();
     }
 
-    /** Emit raw successor transitions of state with given id (one TLC step). */
+    /** Emit successor transitions of state with given id (one TLC step). */
     public String doNext(int stateId) {
-        return emitTransitions(stateId, rawSuccessors(stateId));
+        return emitTransitionList(stateId, rawSuccessors(stateId));
     }
 
     /**
-     * Walk raw parent pointers and emit a replayable JSONL trace. Unlike
-     * doTrace, this does NOT collapse MainLoop --- the resulting trace can
-     * be fed to --replay verbatim and TLC will match each step. Each entry
-     * is {action, fp (decimal fingerprint), text}. First entry is the init
-     * state with action="".
+     * Walk parent pointers and emit a replayable trace. Each entry is
+     * {action, state}. First entry is the init state with action="".
+     * Can be fed to --replay verbatim.
      */
     public String doDump(int stateId) {
         if (stateId < 0 || stateId >= states.size()) {
@@ -100,17 +98,11 @@ public class Explorer {
         return sb.toString();
     }
 
-    /**
-     * Walk parent pointers from the given state back to an initial state,
-     * producing an ordered trace. Successive MainLoop intermediate steps are
-     * collapsed: the MainLoop entry is dropped and its child keeps the
-     * semantic action name. (This matches the view that `step` produces.)
-     */
+    /** Walk parent pointers and emit an ordered path from an initial state to stateId. */
     public String doTrace(int stateId) {
         if (stateId < 0 || stateId >= states.size()) {
             return "{\"ok\":false,\"error\":\"unknown state id " + stateId + "\"}";
         }
-        // Collect raw chain root-first.
         List<Integer> chain = new ArrayList<>();
         int cur = stateId;
         while (cur >= 0) {
@@ -119,18 +111,10 @@ public class Explorer {
         }
         java.util.Collections.reverse(chain);
 
-        // Collapse MainLoop steps: drop any entry whose own action is MainLoop.
-        // The next entry (the branch action) already has the branch name.
-        List<Integer> collapsed = new ArrayList<>();
-        for (int id : chain) {
-            if ("MainLoop".equals(parentActions.get(id))) continue;
-            collapsed.add(id);
-        }
-
         StringBuilder sb = new StringBuilder();
         sb.append("{\"ok\":true,\"trace\":[");
-        for (int i = 0; i < collapsed.size(); i++) {
-            int id = collapsed.get(i);
+        for (int i = 0; i < chain.size(); i++) {
+            int id = chain.get(i);
             if (i > 0) sb.append(",");
             sb.append("{\"id\":").append(id)
               .append(",\"action\":").append(jsonStr(parentActions.get(id)))
@@ -139,35 +123,6 @@ public class Explorer {
         }
         sb.append("]}");
         return sb.toString();
-    }
-
-    /**
-     * Emit step successors: skip through any MainLoop transitions until a
-     * meaningful PlusCal branch fires. MainLoop is pure plumbing that just
-     * sets pc[self] := "<branch>"; the LLM wants to see the branch itself.
-     * For each raw successor of the current state:
-     *   - if the action is MainLoop, recurse one level and keep those.
-     *   - otherwise, keep it directly.
-     * The returned id always points at a post-branch state.
-     */
-    public String doStep(int stateId) {
-        if (stateId < 0 || stateId >= states.size()) {
-            return "{\"ok\":false,\"error\":\"unknown state id " + stateId + "\"}";
-        }
-        List<Transition> out = new ArrayList<>();
-        for (Transition t : rawSuccessors(stateId)) {
-            if (!"MainLoop".equals(t.action)) {
-                out.add(t);
-                continue;
-            }
-            // Expand MainLoop: recurse one level; keep any non-MainLoop grandchildren.
-            for (Transition gc : rawSuccessors(t.id)) {
-                if (!"MainLoop".equals(gc.action)) {
-                    out.add(gc);
-                }
-            }
-        }
-        return emitTransitionList(stateId, out);
     }
 
     private static final class Transition {
@@ -195,10 +150,6 @@ public class Explorer {
             }
         }
         return out;
-    }
-
-    private String emitTransitions(int fromId, List<Transition> ts) {
-        return emitTransitionList(fromId, ts);
     }
 
     private String emitTransitionList(int fromId, List<Transition> ts) {
@@ -465,9 +416,6 @@ public class Explorer {
                 } else if (line.startsWith("next ")) {
                     int id = Integer.parseInt(line.substring(5).trim());
                     out = ex.doNext(id);
-                } else if (line.startsWith("step ")) {
-                    int id = Integer.parseInt(line.substring(5).trim());
-                    out = ex.doStep(id);
                 } else if (line.startsWith("trace ")) {
                     int id = Integer.parseInt(line.substring(6).trim());
                     out = ex.doTrace(id);
