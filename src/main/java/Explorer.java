@@ -223,15 +223,17 @@ public class Explorer {
         return valueToJson(r);
     }
 
+    // Serializes a TLA+ value to ITF (Informal Trace Format) JSON.
+    // Spec: https://apalache-mc.org/docs/adr/015adr-trace.html
     private static String valueToJson(Value v) {
         if (v instanceof IntValue)
-            return String.valueOf(((IntValue) v).val);
+            return "{\"#bigint\":\"" + ((IntValue) v).val + "\"}";
         if (v instanceof StringValue)
             return jsonStr(((StringValue) v).val.toString());
         if (v instanceof BoolValue)
             return ((BoolValue) v).val ? "true" : "false";
         if (v instanceof ModelValue)
-            return "{\"$mv\":" + jsonStr(((ModelValue) v).val.toString()) + "}";
+            return jsonStr(((ModelValue) v).val.toString());
         if (v instanceof RecordValue) {
             RecordValue r = (RecordValue) v;
             StringBuilder sb = new StringBuilder("{");
@@ -252,27 +254,27 @@ public class Explorer {
         }
         if (v instanceof FcnRcdValue) {
             FcnRcdValue f = (FcnRcdValue) v;
-            if (f.intv != null) {
-                if (f.intv.low == 1) {
-                    // Sequence: domain is 1..n, serialize as JSON array.
-                    StringBuilder sb = new StringBuilder("[");
-                    for (int i = 0; i < f.values.length; i++) {
-                        if (i > 0) sb.append(",");
-                        sb.append(valueToJson(f.values[i]));
-                    }
-                    return sb.append("]").toString();
-                }
-                // Integer-range function not starting at 1.
-                StringBuilder sb = new StringBuilder("{\"$fn\":[");
+            if (f.intv != null && f.intv.low == 1) {
+                // Sequence: domain is 1..n, serialize as JSON array.
+                StringBuilder sb = new StringBuilder("[");
                 for (int i = 0; i < f.values.length; i++) {
                     if (i > 0) sb.append(",");
-                    sb.append("[").append(f.intv.low + i).append(",")
+                    sb.append(valueToJson(f.values[i]));
+                }
+                return sb.append("]").toString();
+            }
+            if (f.intv != null) {
+                // Integer-range function not starting at 1.
+                StringBuilder sb = new StringBuilder("{\"#map\":[");
+                for (int i = 0; i < f.values.length; i++) {
+                    if (i > 0) sb.append(",");
+                    sb.append("[{\"#bigint\":\"").append(f.intv.low + i).append("\"},")
                       .append(valueToJson(f.values[i])).append("]");
                 }
                 return sb.append("]}").toString();
             }
             // General function with explicit domain array.
-            StringBuilder sb = new StringBuilder("{\"$fn\":[");
+            StringBuilder sb = new StringBuilder("{\"#map\":[");
             for (int i = 0; i < f.domain.length; i++) {
                 if (i > 0) sb.append(",");
                 sb.append("[").append(valueToJson(f.domain[i])).append(",")
@@ -282,19 +284,23 @@ public class Explorer {
         }
         if (v instanceof IntervalValue) {
             IntervalValue iv = (IntervalValue) v;
-            return "{\"$interval\":[" + iv.low + "," + iv.high + "]}";
+            StringBuilder sb = new StringBuilder("{\"#set\":[");
+            for (int i = iv.low; i <= iv.high; i++) {
+                if (i > iv.low) sb.append(",");
+                sb.append("{\"#bigint\":\"").append(i).append("\"}");
+            }
+            return sb.append("]}").toString();
         }
         if (v instanceof SetEnumValue) {
             SetEnumValue s = (SetEnumValue) v;
             ValueVec elems = s.elems;
-            StringBuilder sb = new StringBuilder("{\"$set\":[");
+            StringBuilder sb = new StringBuilder("{\"#set\":[");
             for (int i = 0; i < elems.size(); i++) {
                 if (i > 0) sb.append(",");
                 sb.append(valueToJson(elems.elementAt(i)));
             }
             return sb.append("]}").toString();
         }
-        // Unknown value type: fall back to the TLA+ string representation.
         return jsonStr(v.toString());
     }
 

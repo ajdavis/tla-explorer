@@ -35,21 +35,22 @@ class ExplorerTest {
         String result = ex.doInit();
         assertTrue(result.contains("\"ok\":true"), result);
         // Primitives
-        assertTrue(result.contains("\"vi\":42"), result);
+        // ITF format: https://apalache-mc.org/docs/adr/015adr-trace.html
+        assertTrue(result.contains("\"vi\":{\"#bigint\":\"42\"}"), result);
         assertTrue(result.contains("\"vs\":\"hello\""), result);
         assertTrue(result.contains("\"vb\":true"), result);
-        // Record: fields sorted alphabetically by normalize()
-        assertTrue(result.contains("\"vrcd\":{\"x\":1,\"y\":\"world\"}"), result);
+        // Record: fields sorted alphabetically by deepNormalize()
+        assertTrue(result.contains("\"vrcd\":{\"x\":{\"#bigint\":\"1\"},\"y\":\"world\"}"), result);
         // Sequence
-        assertTrue(result.contains("\"vseq\":[1,2,3]"), result);
+        assertTrue(result.contains("\"vseq\":[{\"#bigint\":\"1\"},{\"#bigint\":\"2\"},{\"#bigint\":\"3\"}]"), result);
         // Set
-        assertTrue(result.contains("\"vset\":{\"$set\":[1,2,3]}"), result);
-        // Model value
-        assertTrue(result.contains("\"vmv\":{\"$mv\":\"mv1\"}"), result);
+        assertTrue(result.contains("\"vset\":{\"#set\":[{\"#bigint\":\"1\"},{\"#bigint\":\"2\"},{\"#bigint\":\"3\"}]}"), result);
+        // Model value: plain string (ITF has no distinct model-value tag)
+        assertTrue(result.contains("\"vmv\":\"mv1\""), result);
         // General function
-        assertTrue(result.contains("\"vfcn\":{\"$fn\":[[2,20],[4,40]]}"), result);
-        // Integer interval
-        assertTrue(result.contains("\"vintv\":{\"$interval\":[1,3]}"), result);
+        assertTrue(result.contains("\"vfcn\":{\"#map\":[[{\"#bigint\":\"2\"},{\"#bigint\":\"20\"}],[{\"#bigint\":\"4\"},{\"#bigint\":\"40\"}]]}"), result);
+        // Integer interval: enumerated as a set
+        assertTrue(result.contains("\"vintv\":{\"#set\":[{\"#bigint\":\"1\"},{\"#bigint\":\"2\"},{\"#bigint\":\"3\"}]}"), result);
     }
 
 }
