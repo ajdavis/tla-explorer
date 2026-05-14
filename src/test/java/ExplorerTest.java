@@ -53,4 +53,31 @@ class ExplorerTest {
         assertTrue(result.contains("\"vintv\":{\"#set\":[{\"#bigint\":\"1\"},{\"#bigint\":\"2\"},{\"#bigint\":\"3\"}]}"), result);
     }
 
+    @Test
+    void doInit_setSerializationIsOrderIndependent() {
+        Explorer ex = explorerFor("OrderNormalization");
+        String result = ex.doInit();
+        String canonical = "{\"#set\":[{\"#bigint\":\"1\"},{\"#bigint\":\"2\"},{\"#bigint\":\"3\"}]}";
+        assertTrue(result.contains("\"vset_asc\":" + canonical), result);
+        assertTrue(result.contains("\"vset_desc\":" + canonical), result);
+    }
+
+    @Test
+    void doInit_recordSerializationIsOrderIndependent() {
+        Explorer ex = explorerFor("OrderNormalization");
+        String result = ex.doInit();
+        String canonical = "{\"x\":{\"#bigint\":\"1\"},\"y\":\"world\"}";
+        assertTrue(result.contains("\"vrcd_xy\":" + canonical), result);
+        assertTrue(result.contains("\"vrcd_yx\":" + canonical), result);
+    }
+
+    @Test
+    void doInit_functionSerializationIsOrderIndependent() {
+        Explorer ex = explorerFor("OrderNormalization");
+        String result = ex.doInit();
+        String canonical = "{\"#map\":[[{\"#bigint\":\"2\"},{\"#bigint\":\"20\"}],[{\"#bigint\":\"4\"},{\"#bigint\":\"40\"}]]}";
+        assertTrue(result.contains("\"vfcn_24\":" + canonical), result);
+        assertTrue(result.contains("\"vfcn_42\":" + canonical), result);
+    }
+
 }
