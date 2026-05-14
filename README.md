@@ -2,7 +2,7 @@
 
 A small Java program that drives the TLA+ model checker's internal `Tool` API as an interactive, line-oriented state explorer. Given a `.tla` spec and a `.cfg` config, it enumerates initial states and successors on demand, remembers every state it has emitted, and can replay a saved sequence of states against the spec.
 
-`Explorer.java` is a single file (no build system, no dependencies beyond `tla2tools.jar`). It is intended for two audiences:
+`Explorer.java` is a single file built with Maven. Its only runtime dependency is `tla2tools.jar`, which also bundles Gson (used for JSON parsing in replay mode). It is intended for two audiences:
 
 - **Java programmers** who want a concrete, readable example of using TLC's `tlc2.tool.ITool` API (`getInitStates`, `getActions`, `getNextStates`) outside the model checker's BFS driver.
 - **LLM-driven workflows** that want to step a spec one transition at a time, the same way a human would in the TLA+ Toolbox, but over stdio.
@@ -24,7 +24,7 @@ exit
 
 Each response is a single JSON line. States are assigned integer ids on first sight and remembered forever, so backtracking is free: re-issue `step <earlier-id>` to fork a different branch without re-deriving anything.
 
-This makes it natural to drive from a script, a notebook, or an LLM agent. The state text is `TLCState.toString()` --- the same `var = value` dump TLA+ users already recognize --- so the driver doesn't need to encode TLA+ values, only choose successor ids.
+This makes it natural to drive from a script, a notebook, or an LLM agent. States are serialized as structured JSON using the [ITF (Informal Trace Format)](https://apalache-mc.org/docs/adr/015adr-trace.html) used by Apalache and Quint, so traces produced by the explorer are compatible with those tools.
 
 ## Build and run
 
@@ -90,19 +90,19 @@ Spec is `LeaseGuard.tla` (a PlusCal protocol with `Write`, `Commit`, `Read`, `Be
 
 ```
 > init
-{"ok":true,"states":[{"id":0,"text":"currentTerm = <<0,0,0>>\nstate = <<\"follower\",\"follower\",\"follower\">>\n..."}]}
+{"ok":true,"states":[{"id":0,"state":{"currentTerm":[{"#bigint":"0"},{"#bigint":"0"},{"#bigint":"0"}],"state":["follower","follower","follower"],...}}]}
 > step 0
 {"ok":true,"from":0,"transitions":[
-  {"id":1,"action":"BecomeLeader","text":"... state = <<\"leader\",\"follower\",\"follower\">> ..."},
-  {"id":2,"action":"Tick","text":"... clocks = <<1,1,1>> ..."}]}
+  {"id":1,"action":"BecomeLeader","state":{"state":["leader","follower","follower"],...}},
+  {"id":2,"action":"Tick","state":{"clocks":[{"#bigint":"1"},{"#bigint":"1"},{"#bigint":"1"}],...}}]}
 > step 1
 {"ok":true,"from":1,"transitions":[
-  {"id":3,"action":"Write","text":"..."}, ...]}
+  {"id":3,"action":"Write","state":{...}}, ...]}
 > trace 3
 {"ok":true,"trace":[
-  {"id":0,"action":"","text":"..."},
-  {"id":1,"action":"BecomeLeader","text":"..."},
-  {"id":3,"action":"Write","text":"..."}]}
+  {"id":0,"action":"","state":{...}},
+  {"id":1,"action":"BecomeLeader","state":{...}},
+  {"id":3,"action":"Write","state":{...}}]}
 ```
 
 `step` vs `next`: `step` skips through PlusCal's `MainLoop` plumbing label (which only sets `pc[self] := "<branch>"`) so each returned transition is a semantic protocol action. `next` is the raw TLC view --- useful when the spec has no PlusCal `MainLoop` dispatch, or when you want to inspect the dispatcher itself.
@@ -127,7 +127,7 @@ A trace is a sequence `s_0 --a_1--> s_1 --a_2--> s_2 ...` Once you have one --- 
 
 `Explorer --replay` does exactly this. For each pair `(action_i, state_i)` it asks TLC's `getNextStates(action_i, state_{i-1})` for every Action with that name (PlusCal expands one labeled action with N processes into N Action objects sharing a name), and checks that one of them produces a state matching `state_i`. If yes, advance; if no, fail loudly with the step number, the action name, and the number of candidate successors that were considered.
 
-This generalizes to runtime conformance monitoring of a real implementation. If your production system logs `(action, post-state)` events in a form that maps onto the spec's variables, you can feed that log into the explorer and assert that the implementation's observed behavior is allowed by the spec. Divergences show up as "no successor matched trace text" at the offending step. The spec becomes a live oracle, not a one-time design document.
+This generalizes to runtime conformance monitoring of a real implementation. If your production system logs `(action, post-state)` events in a form that maps onto the spec's variables, you can feed that log into the explorer and assert that the implementation's observed behavior is allowed by the spec. Divergences show up as "no successor matched trace state" at the offending step. The spec becomes a live oracle, not a one-time design document.
 
 ### Example traces as spec unit tests
 
@@ -156,23 +156,23 @@ The LLM (or the human) is needed once to find each interesting trace. After that
 
 ### Commands
 
-| command       | response shape                                                                          |
-|---------------|------------------------------------------------------------------------------------------|
-| `init`        | `{"ok":true,"states":[{"id":N,"text":"..."}, ...]}`                                     |
-| `next <id>`   | `{"ok":true,"from":N,"transitions":[{"id":M,"action":"X","text":"..."}, ...]}`          |
-| `step <id>`   | same shape as `next`, with PlusCal `MainLoop` collapsed                                  |
-| `trace <id>`  | `{"ok":true,"trace":[{"id":N,"action":"","text":"..."}, ...]}` (init first)              |
-| `dump <id>`   | `{"ok":true,"dump":[{"action":"","text":"..."}, ...]}` (raw, replayable)                 |
-| `exit`/`quit` | terminates the process                                                                   |
-| unknown line  | `{"ok":false,"error":"..."}` and the process keeps running                               |
+| command       | response shape                                                                              |
+|---------------|----------------------------------------------------------------------------------------------|
+| `init`        | `{"ok":true,"states":[{"id":N,"state":{...}}, ...]}`                                       |
+| `next <id>`   | `{"ok":true,"from":N,"transitions":[{"id":M,"action":"X","state":{...}}, ...]}`            |
+| `step <id>`   | same shape as `next`, with PlusCal `MainLoop` collapsed                                     |
+| `trace <id>`  | `{"ok":true,"trace":[{"id":N,"action":"","state":{...}}, ...]}` (init first)               |
+| `dump <id>`   | `{"ok":true,"dump":[{"action":"","state":{...}}, ...]}` (raw, replayable)                  |
+| `exit`/`quit` | terminates the process                                                                      |
+| unknown line  | `{"ok":false,"error":"..."}` and the process keeps running                                  |
 
-Any thrown exception is reported as `{"ok":false,"error":"..."}` and does not crash the process. The dispatch boundary catches `Throwable` so the loop survives malformed input. Inside `getNextStates`, only `EvalException` (TLC's "action guard was false" signal) is silently continued; any other throwable propagates to the outer handler and is reported as an error.
+State objects use [ITF (Informal Trace Format)](https://apalache-mc.org/docs/adr/015adr-trace.html): integers become `{"#bigint":"n"}`, sets `{"#set":[...]}`, functions `{"#map":[[k,v],...]}`, records native JSON objects, sequences native JSON arrays.
+
+Any thrown exception is reported as `{"ok":false,"error":"..."}` and does not crash the process. The dispatch boundary catches `Throwable` so the loop survives malformed input and propagates real errors (including `EvalException` for spec evaluation failures like division by zero) as error responses rather than silently swallowing them.
 
 ### State identity
 
-The explorer compares states by **normalized text**, not by TLC fingerprint. The normalization (`canon` in the source) collapses whitespace and alphabetically sorts record field names, because TLC's `RecordValue.normalize` orders fields by intern order, and intern order is not stable across the command sequences a driver might issue. Sorting field names by code gives a canonical form that doesn't depend on TLC's internal `UniqueString` table.
-
-TLC fingerprints would be a tempting alternative but they depend on `SYMMETRY` perms and on type-aware `compareTo`, which throws on heterogeneous records. Text-based comparison is slower but robust across spec variants.
+The explorer serializes states with `deepNormalize()` before JSON conversion, which recursively sorts set elements and record fields into a canonical order. Replay mode compares states using Gson's `JsonElement.equals`, which is order-insensitive for JSON objects and order-sensitive for arrays---exactly the right semantics for TLA+ records (unordered) vs sequences (ordered).
 
 ### `MainLoop` collapsing
 
@@ -182,7 +182,7 @@ If the spec uses a different dispatcher name or no PlusCal at all, use `next` an
 
 ## Files
 
-- `Explorer.java` --- the program. Single file, ~500 lines, no third-party dependencies. The replay logic and the interactive loop share the state-text-comparison code, so they cannot drift.
+- `Explorer.java` --- the program. Single file, no third-party dependencies beyond Gson (bundled in `tla2tools.jar`). The replay logic and the interactive loop share `stateJson()`, so serialization cannot drift between them.
 
 ## License
 
