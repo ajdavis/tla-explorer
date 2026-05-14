@@ -61,11 +61,9 @@ def main() -> None:
     # Append a step where p2 also becomes critical.  Enter2 requires
     # p1 != "critical", so this transition cannot follow from the state
     # where p1 = "critical".
-    critical_text = valid_dump[-1]["text"]          # p1="critical", p2="idle"
-    violation_text = critical_text.replace(         # p1="critical", p2="critical"
-        'p2 = "idle"', 'p2 = "critical"'
-    )
-    bad_dump = valid_dump + [{"action": "Enter2", "text": violation_text}]
+    critical_state = valid_dump[-1]["state"]        # p1="critical", p2="idle"
+    violation_state = {**critical_state, "p2": "critical"}
+    bad_dump = valid_dump + [{"action": "Enter2", "state": violation_state}]
     bad_path = write_trace(bad_dump)
     passed, output = replay(spec, cfg, bad_path, cwd=SPEC_DIR)
     assert not passed, f"mutual-exclusion violation passed --replay:\n{output}"

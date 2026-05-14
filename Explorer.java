@@ -15,6 +15,11 @@ import tlc2.value.impl.TupleValue;
 import tlc2.value.impl.Value;
 import tlc2.value.impl.ValueVec;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
@@ -88,7 +93,7 @@ public class Explorer {
             TLCState s = states.get(id);
             if (i > 0) sb.append(",");
             sb.append("{\"action\":").append(jsonStr(parentActions.get(id)))
-              .append(",\"text\":").append(jsonStr(stateText(s)))
+              .append(",\"state\":").append(stateJson(s))
               .append("}");
         }
         sb.append("]}");
@@ -293,13 +298,6 @@ public class Explorer {
         return jsonStr(v.toString());
     }
 
-    /** Minimal TLA+-flavored state rendering using TLCState.toString(). */
-    private static String stateText(TLCState s) {
-        // TLCState.toString() returns "var1 = expr\nvar2 = expr\n..." which
-        // is already the classic TLC dump format the LLM will recognize.
-        return s.toString().trim();
-    }
-
     private static String jsonStr(String s) {
         StringBuilder sb = new StringBuilder();
         sb.append('"');
@@ -325,28 +323,25 @@ public class Explorer {
      * step whose target state cannot be reached via the named action.
      * Exit 0 = trace replays cleanly; exit 1 = trace diverged.
      *
-     * Dump format: JSON object with "dump" array of {action, text}. States
-     * are matched by normalized text (TLCState.toString with whitespace
-     * collapsed). We use text instead of fingerprint because fingerprint
-     * depends on symmetry perms and type-aware compareTo (which throws on
-     * heterogeneous records), neither of which are stable/safe across all
-     * spec variants we want to replay.
+     * Dump format: JSON object with "dump" array of {action, state}.
+     * States are matched by deep-normalized JSON equality (Gson
+     * JsonElement.equals: order-insensitive for objects, order-sensitive
+     * for arrays).
      */
     public static int doReplay(String specDir, String specName, String cfgAbs,
                                 String tracePath) throws Exception {
         String raw = new String(java.nio.file.Files.readAllBytes(
                 java.nio.file.Paths.get(tracePath)));
-        java.util.regex.Pattern entryP = java.util.regex.Pattern.compile(
-            "\\{\\s*\"action\"\\s*:\\s*\"([^\"]*)\"\\s*," +
-            "\\s*\"text\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\}");
-        java.util.regex.Matcher m = entryP.matcher(raw);
+        JsonArray dump = JsonParser.parseString(raw)
+                .getAsJsonObject().getAsJsonArray("dump");
         List<String> actions = new ArrayList<>();
-        List<String> texts = new ArrayList<>();
-        while (m.find()) {
-            actions.add(m.group(1));
-            texts.add(canon(unjson(m.group(2))));
+        List<JsonElement> wantStates = new ArrayList<>();
+        for (JsonElement entry : dump) {
+            JsonObject obj = entry.getAsJsonObject();
+            actions.add(obj.get("action").getAsString());
+            wantStates.add(obj.get("state"));
         }
-        if (texts.isEmpty()) {
+        if (wantStates.isEmpty()) {
             System.out.println("FAIL: empty trace");
             return 1;
         }
@@ -359,7 +354,10 @@ public class Explorer {
         StateVec initStates = tool.getInitStates();
         for (int i = 0; i < initStates.size(); i++) {
             TLCState s = initStates.elementAt(i);
-            if (canon(stateText(s)).equals(texts.get(0))) { current = s; break; }
+            if (JsonParser.parseString(stateJson(s)).equals(wantStates.get(0))) {
+                current = s;
+                break;
+            }
         }
         if (current == null) {
             System.out.println("FAIL: no init state matches trace[0]");
@@ -368,9 +366,9 @@ public class Explorer {
         System.out.println("OK  step 0 <init>");
 
         Action[] allActions = tool.getActions();
-        for (int i = 1; i < texts.size(); i++) {
+        for (int i = 1; i < wantStates.size(); i++) {
             String wantAction = actions.get(i);
-            String wantText = texts.get(i);
+            JsonElement wantState = wantStates.get(i);
             // A PlusCal action with N processes becomes N Action objects
             // sharing the same name; we must try them all.
             List<Action> matchingActions = new ArrayList<>();
@@ -390,13 +388,16 @@ public class Explorer {
                 for (int j = 0; j < succs.size(); j++) {
                     TLCState s = succs.elementAt(j);
                     if (!s.allAssigned()) continue;
-                    if (canon(stateText(s)).equals(wantText)) { match = s; break; }
+                    if (JsonParser.parseString(stateJson(s)).equals(wantState)) {
+                        match = s;
+                        break;
+                    }
                 }
                 if (match != null) break;
             }
             if (match == null) {
                 System.out.println("FAIL step " + i + " " + wantAction
-                        + ": no successor matched trace text"
+                        + ": no successor matched trace state"
                         + " (searched " + totalSuccs + " candidates across "
                         + matchingActions.size() + " action instances)");
                 return 1;
@@ -404,93 +405,8 @@ public class Explorer {
             System.out.println("OK  step " + i + " " + wantAction);
             current = match;
         }
-        System.out.println("PASS: trace of " + texts.size() + " steps replayed cleanly");
+        System.out.println("PASS: trace of " + wantStates.size() + " steps replayed cleanly");
         return 0;
-    }
-
-    /**
-     * Canonicalize state text so comparison is robust. Collapses
-     * whitespace and sorts record field names alphabetically, because
-     * TLC's RecordValue.normalize orders by UniqueString.tok (intern
-     * order), and intern order isn't stable across command sequences
-     * in our interactive driver --- the same record can print with a
-     * different field permutation depending on what else has been
-     * evaluated. Alphabetical sort gives a canonical form that doesn't
-     * depend on TLC internals.
-     */
-    private static String canon(String s) {
-        String collapsed = s.replaceAll("\\s+", " ").trim();
-        return sortRecordFields(collapsed);
-    }
-
-    /**
-     * Regex-sort record fields: [k1 |-> v1, k2 |-> v2, ...] becomes
-     * [ki |-> vi, ...] with ki in alphabetical order. Handles nesting
-     * by applying the rewrite only to innermost records repeatedly.
-     */
-    private static String sortRecordFields(String text) {
-        // Innermost record: no nested [ before the matching ].
-        java.util.regex.Pattern innermost = java.util.regex.Pattern.compile(
-                "\\[([^\\[\\]]*?\\|->[^\\[\\]]*?)\\]");
-        while (true) {
-            java.util.regex.Matcher m = innermost.matcher(text);
-            StringBuilder sb = new StringBuilder();
-            int last = 0;
-            boolean any = false;
-            while (m.find()) {
-                any = true;
-                sb.append(text, last, m.start());
-                String body = m.group(1);
-                // Split top-level commas: no nested <<>>, (), [] to worry
-                // about because this is the innermost record.
-                String[] fields = body.split("\\s*,\\s*");
-                java.util.Arrays.sort(fields);
-                sb.append('[');
-                for (int i = 0; i < fields.length; i++) {
-                    if (i > 0) sb.append(", ");
-                    sb.append(fields[i].trim());
-                }
-                sb.append(']');
-                last = m.end();
-            }
-            sb.append(text, last, text.length());
-            if (!any) return text;
-            String next = sb.toString();
-            if (next.equals(text)) return next;
-            // Nested records rely on the outer regex seeing the inner
-            // record replaced; but our replacement may have introduced a
-            // `]`-terminated token that the outer pattern would now match.
-            // However, since the regex is innermost-only, we'd also need
-            // to ensure the outer record now has no `[` in its body. For
-            // records containing records, we use a sentinel: replace
-            // already-sorted records' brackets to evade rematching.
-            text = next;
-            // Break infinite loops: one pass handles all innermost
-            // records already.
-            return text;
-        }
-    }
-
-    /** Decode JSON-escaped string back to raw text. */
-    private static String unjson(String s) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char next = s.charAt(++i);
-                switch (next) {
-                    case 'n':  sb.append('\n'); break;
-                    case 't':  sb.append('\t'); break;
-                    case 'r':  sb.append('\r'); break;
-                    case '"':  sb.append('"'); break;
-                    case '\\': sb.append('\\'); break;
-                    default:   sb.append(next); break;
-                }
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 
     public static void main(String[] args) throws Exception {
