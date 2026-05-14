@@ -213,7 +213,9 @@ public class Explorer {
     }
 
     private static String stateJson(TLCState s) {
-        return valueToJson(new RecordValue(s).normalize());
+        Value r = new RecordValue(s);
+        r.deepNormalize();
+        return valueToJson(r);
     }
 
     private static String valueToJson(Value v) {
